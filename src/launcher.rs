@@ -83,7 +83,7 @@ impl Launcher {
                 password_mode,
             } => {
                 let mut cmd = Command::new("rofi");
-                cmd.arg("-m").arg("-1").arg("-dmenu");
+                cmd.arg("-m").arg("-1").arg("-dmenu").arg("-i");
                 if icon_type == "xdg" {
                     cmd.arg("-show-icons");
                 }
