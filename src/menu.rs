@@ -398,7 +398,7 @@ impl Menu {
         spaces: usize,
         available_options: Vec<KnownNetworkOptions>,
         network_ssid: &str,
-        back_on_escape: bool,
+        interactive: bool,
     ) -> Result<Option<KnownNetworkOptions>> {
         let mut input = String::new();
 
@@ -450,7 +450,7 @@ impl Menu {
             input.push_str(&format!("{option_text}\n"));
         }
 
-        if !back_on_escape {
+        if !interactive {
             let back_text = self.icons.get_icon_text(
                 vec![("back", t!("menus.common.back"))],
                 icon_type,
@@ -478,7 +478,7 @@ impl Menu {
         current_mode: &Mode,
         icon_type: &str,
         spaces: usize,
-        back_on_escape: bool,
+        interactive: bool,
     ) -> Result<Option<SettingsMenuOptions>> {
         let target_mode = match current_mode {
             Mode::Station => Mode::Ap,
@@ -517,7 +517,7 @@ impl Menu {
             ),
         ];
 
-        if !back_on_escape {
+        if !interactive {
             options.push((
                 SettingsMenuOptions::Back.to_id(),
                 self.icons.format_display_with_icon(

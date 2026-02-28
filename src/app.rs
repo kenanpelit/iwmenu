@@ -18,7 +18,7 @@ use tokio::time::sleep;
 pub struct App {
     pub running: bool,
     pub reset_mode: bool,
-    pub back_on_escape: bool,
+    pub interactive: bool,
     pub session: Arc<Session>,
     pub current_mode: Mode,
     adapter: Adapter,
@@ -27,7 +27,7 @@ pub struct App {
 }
 
 impl App {
-    pub async fn new(icons: Arc<Icons>, back_on_escape: bool) -> Result<Self> {
+    pub async fn new(icons: Arc<Icons>, interactive: bool) -> Result<Self> {
         let agent_manager = AgentManager::new().await?;
         let session = agent_manager.session();
         let adapter = Adapter::new(session.clone()).await?;
@@ -51,7 +51,7 @@ impl App {
             session,
             current_mode,
             reset_mode: false,
-            back_on_escape,
+            interactive,
         })
     }
 
@@ -181,10 +181,12 @@ impl App {
         match main_menu_option {
             MainMenuOptions::Scan => {
                 self.perform_network_scan().await?;
+                Ok(None)
             }
             MainMenuOptions::Settings => {
                 self.handle_settings_menu(menu, menu_command, icon_type, spaces)
                     .await?;
+                Ok(None)
             }
             MainMenuOptions::Network(output) => {
                 if let Some(ssid) = self
@@ -193,9 +195,9 @@ impl App {
                 {
                     return Ok(Some(ssid));
                 }
+                Ok(None)
             }
         }
-        Ok(None)
     }
 
     async fn handle_ap_options(
@@ -226,10 +228,16 @@ impl App {
                     }
                     if !ap.ssid.is_empty() && !ap.psk.is_empty() {
                         self.perform_ap_start(menu, menu_command, icon_type).await?;
+                        if !self.interactive {
+                            self.running = false;
+                        }
                     }
                 }
                 ApMenuOptions::StopAp => {
                     self.perform_ap_stop().await?;
+                    if !self.interactive {
+                        self.running = false;
+                    }
                 }
                 ApMenuOptions::SetSsid => {
                     if let Some(ssid) = menu.prompt_ap_ssid(menu_command, icon_type) {
@@ -250,13 +258,16 @@ impl App {
                             &self.current_mode,
                             icon_type,
                             spaces,
-                            self.back_on_escape,
+                            self.interactive,
                         )
                         .await?
                     {
                         self.handle_settings_options(option, menu, menu_command, icon_type, spaces)
                             .await?;
-                    } else if !self.back_on_escape {
+                        if !self.interactive {
+                            self.running = false;
+                        }
+                    } else if !self.interactive {
                         self.running = false;
                     }
                 }
@@ -296,7 +307,7 @@ impl App {
                 spaces,
                 available_options,
                 &known_network.name,
-                self.back_on_escape,
+                self.interactive,
             )
             .await?
         {
@@ -305,21 +316,37 @@ impl App {
                 KnownNetworkOptions::DisableAutoconnect => {
                     self.perform_toggle_autoconnect(known_network, false)
                         .await?;
-                    Ok(true)
+                    if !self.interactive {
+                        self.running = false;
+                        Ok(false)
+                    } else {
+                        Ok(true)
+                    }
                 }
                 KnownNetworkOptions::EnableAutoconnect => {
                     self.perform_toggle_autoconnect(known_network, true).await?;
-                    Ok(true)
+                    if !self.interactive {
+                        self.running = false;
+                        Ok(false)
+                    } else {
+                        Ok(true)
+                    }
                 }
                 KnownNetworkOptions::ForgetNetwork => {
                     self.perform_forget_network(known_network).await?;
+                    if !self.interactive {
+                        self.running = false;
+                    }
                     Ok(false)
                 }
                 KnownNetworkOptions::Disconnect => {
                     if is_connected {
                         self.perform_network_disconnection().await?;
+                        if !self.interactive {
+                            self.running = false;
+                        }
                     }
-                    Ok(true)
+                    Ok(false)
                 }
                 KnownNetworkOptions::Connect => {
                     if let Some(station) = self.adapter.device.station.as_mut() {
@@ -330,19 +357,19 @@ impl App {
                             .map(|(net, _)| net.clone())
                         {
                             self.perform_known_network_connection(&network).await?;
+                            if !self.interactive {
+                                self.running = false;
+                            }
                         }
                     }
-                    Ok(true)
+                    Ok(false)
                 }
             }
+        } else if self.interactive {
+            Ok(false)
         } else {
-            debug!("Exited network menu for {}", known_network.name);
-            if self.back_on_escape {
-                Ok(false)
-            } else {
-                self.running = false;
-                Ok(false)
-            }
+            self.running = false;
+            Ok(false)
         }
     }
 
@@ -364,20 +391,22 @@ impl App {
                     &self.current_mode,
                     icon_type,
                     spaces,
-                    self.back_on_escape,
+                    self.interactive,
                 )
                 .await?
             {
-                let should_stay = self
-                    .handle_settings_options(option, menu, menu_command, icon_type, spaces)
-                    .await?;
-
-                if !should_stay {
+                if matches!(option, SettingsMenuOptions::Back) {
                     stay_in_settings_menu = false;
+                } else {
+                    self.handle_settings_options(option, menu, menu_command, icon_type, spaces)
+                        .await?;
+                    if !self.interactive {
+                        self.running = false;
+                        stay_in_settings_menu = false;
+                    }
                 }
             } else {
-                debug!("Exited settings menu");
-                if !self.back_on_escape {
+                if !self.interactive {
                     self.running = false;
                 }
                 stay_in_settings_menu = false;
@@ -481,9 +510,13 @@ impl App {
                 .await?;
                 return Ok(None);
             } else {
-                return self
+                let result = self
                     .perform_new_network_connection(menu, menu_command, &network, icon_type)
-                    .await;
+                    .await?;
+                if !self.interactive {
+                    self.running = false;
+                }
+                return Ok(result);
             }
         }
 

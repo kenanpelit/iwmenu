@@ -78,10 +78,10 @@ async fn main() -> Result<()> {
                 .help("Number of spaces between icon and text when using font icons"),
         )
         .arg(
-            Arg::new("back_on_escape")
-                .long("back-on-escape")
+            Arg::new("interactive")
+                .long("interactive")
                 .action(clap::ArgAction::SetTrue)
-                .help("Return to previous menu on escape instead of exiting"),
+                .help("Stay in menus after actions and return to previous menu on escape"),
         )
         .get_matches();
 
@@ -106,7 +106,7 @@ async fn main() -> Result<()> {
     };
 
     let icon_type = matches.get_one::<String>("icon").unwrap().clone();
-    let back_on_escape = matches.get_flag("back_on_escape");
+    let interactive = matches.get_flag("interactive");
 
     let icons = Arc::new(Icons::new());
     let menu = Menu::new(launcher_type, icons.clone());
@@ -116,15 +116,7 @@ async fn main() -> Result<()> {
         .and_then(|s| s.parse::<usize>().ok())
         .ok_or_else(|| anyhow!("Invalid value for --spaces. Must be a positive integer."))?;
 
-    run_app_loop(
-        &menu,
-        &command_str,
-        &icon_type,
-        spaces,
-        icons,
-        back_on_escape,
-    )
-    .await?;
+    run_app_loop(&menu, &command_str, &icon_type, spaces, icons, interactive).await?;
 
     Ok(())
 }
@@ -135,9 +127,9 @@ async fn run_app_loop(
     icon_type: &str,
     spaces: usize,
     icons: Arc<Icons>,
-    back_on_escape: bool,
+    interactive: bool,
 ) -> Result<()> {
-    let mut app = App::new(icons.clone(), back_on_escape).await?;
+    let mut app = App::new(icons.clone(), interactive).await?;
 
     loop {
         match app.run(menu, command_str, icon_type, spaces).await {
@@ -156,7 +148,7 @@ async fn run_app_loop(
         }
 
         if app.reset_mode {
-            app = App::new(icons.clone(), back_on_escape).await?;
+            app = App::new(icons.clone(), interactive).await?;
             app.reset_mode = false;
         }
     }
